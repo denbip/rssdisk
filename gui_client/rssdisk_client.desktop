@@ -1,0 +1,10 @@
+#!/usr/bin/env xdg-open
+
+[Desktop Entry]
+Version=1.0
+Type=Application
+Terminal=false
+Exec=/root/denhub_private/build/rssdisk_client_debug/rssdisk_client
+Name=Rssdisk
+Comment=comment here
+Icon=/root/denhub_private/rssdisk/gui_client/rssdisk_client/resources/hdd.png
