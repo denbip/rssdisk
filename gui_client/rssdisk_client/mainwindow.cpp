@@ -34,15 +34,7 @@ MainWindow::MainWindow(QWidget *parent) :
     p.setColor(QPalette::Base, QColor(255, 255, 255));
     p.setColor(QPalette::Text, QColor(0, 0, 0));
     ui->lineEdit->setPalette(p);
-    ui->lineEdit_2->setPalette(p);
     ui->lineEdit_3->setPalette(p);
-
-    ui->comboBox_7->addItem("Json (appendable)");
-    ui->comboBox_7->addItem("Zlib");
-    ui->comboBox_7->addItem("Zlib parted (appendable)");
-
-    ui->comboBox_8->addItem("One file");
-    ui->comboBox_8->addItem("Two files (appendable)");
 
     ui->comboBox_2->addItem("Image");
     ui->comboBox_2->addItem("Json");
@@ -93,12 +85,6 @@ MainWindow::MainWindow(QWidget *parent) :
     QFileInfo check_file { QCoreApplication::applicationDirPath() + "/settings.ini" };
     if (check_file.exists() && check_file.isFile())
     {
-        QStringList exp = settings.value("templates/names", 5).toStringList();
-        for (const QString& it : exp)
-        {
-            ui->comboBox->addItem(it);
-        }
-
         ui->comboBox_6->setCurrentIndex(settings.value("selected_group", 0).toInt());
     }
     else
@@ -158,16 +144,6 @@ MainWindow::MainWindow(QWidget *parent) :
             emit s_timer();
         }
     });
-
-    model = new QStandardItemModel(0, 2, this);
-    //model->setHeaderData(0, Qt::Horizontal, tr("Label"));
-    //model->setHeaderData(1, Qt::Horizontal, tr("Quantity"));
-
-    pie_1 = new PieView();
-    pie_1->setBaseSize(215, 120);
-    pie_1->setMaximumSize(215, 120);
-    ui->horizontalLayout_8->addWidget(pie_1);
-    pie_1->setModel(model);
 }
 
 MainWindow::~MainWindow()
@@ -344,7 +320,6 @@ void MainWindow::on_pushButton_3_clicked()
 void MainWindow::on_pushButton_2_clicked()
 {
     QString search;
-    if (ui->comboBox->count() != 0) search = ui->comboBox->currentText();
     search += ui->lineEdit->text();
 
     {
@@ -355,8 +330,7 @@ void MainWindow::on_pushButton_2_clicked()
             return;
         }
 
-        std::int32_t count_segments_folder { 0 };
-        basefunc_std::stoi(ui->lineEdit_2->text().toStdString(), count_segments_folder);
+        std::int32_t count_segments_folder { 1000 };
         std::int32_t segment = get_segment_folder(search.toStdString(), count_segments_folder);
 
         QString out_for_console;
@@ -467,8 +441,7 @@ void MainWindow::open_file(std::uint32_t suuid, std::string filename, bool is_sa
 
         ::timer tm;
 
-        std::int32_t count_segments_folder { 0 };
-        basefunc_std::stoi(ui->lineEdit_2->text().toStdString(), count_segments_folder);
+        std::int32_t count_segments_folder { 1000 };
         std::int32_t segment = get_segment_folder(filename, count_segments_folder);
 
         bool is_jdb { false };
@@ -854,35 +827,6 @@ void MainWindow::save_file(std::string content, std::string content_sett)
 
             if (content_sett.empty()) content_sett = "{}";
 
-            try
-            {
-                Json::Value root;
-                bool parsingSuccessful = Json::Reader().parse(content_sett, root);
-                if (!parsingSuccessful) throw std::runtime_error("Failed to parse configuration");
-                if (ui->comboBox_7->currentIndex() == 1)
-                {
-                    root["compress_data"] = true;
-                }
-                else if (ui->comboBox_7->currentIndex() == 2)
-                {
-                    //set default size
-                    if (!root.isMember("compress_particularly_data")) root["compress_particularly_data"] = 10000;
-                }
-
-                if (ui->comboBox_8->currentIndex() == 1)
-                {
-                    root["v"] = 2;
-                }
-
-                content_sett = root.toString();
-                ui->textEdit_3->setText(QString::fromStdString(content_sett));
-            }
-            catch(std::exception& ex)
-            {
-                console(QString("[error] Error to parse " + QString::fromStdString(to_log) + " settings: ") + ex.what(), "Red");
-                return;
-            }
-
             content = rssdisk::client::prepare_jdb(content, content_sett);
         }
 
@@ -914,7 +858,6 @@ void MainWindow::save_file(std::string content, std::string content_sett)
         }
 
         QString search;
-        if (ui->comboBox->count() != 0) search = ui->comboBox->currentText();
         search += ui->lineEdit->text();
 
         std::string filename = search.toStdString();
@@ -978,10 +921,6 @@ void MainWindow::on_comboBox_2_currentIndexChanged(int index)
         if (ui->comboBox_2->currentText().compare("jdb") == 0 || ui->comboBox_2->currentText().compare("ajdb") == 0)
         {
             ui->textEdit_3->setVisible(true);
-            ui->pushButton_10->setVisible(true);
-            ui->comboBox_7->setVisible(true);
-            ui->comboBox_8->setVisible(true);
-            ui->label_12->setVisible(true);
             ui->textEdit_2->setReadOnly(false);
 
             console("[example] To create index type: {\"index\":[{\"n\":\"o\"},{\"n\":\"d\",\"t\":\"date\"}]}. Where n - name of index fields, t - type of index (supported int and long by default, t: date - for mongo date index, t: string)", "Green");
@@ -989,20 +928,12 @@ void MainWindow::on_comboBox_2_currentIndexChanged(int index)
         else
         {
             ui->textEdit_3->setVisible(true);
-            ui->pushButton_10->setVisible(false);
-            ui->comboBox_7->setVisible(false);
-            ui->comboBox_8->setVisible(false);
-            ui->label_12->setVisible(false);
             ui->textEdit_2->setReadOnly(false);
         }
     }
     else
     {
         ui->textEdit_3->setVisible(false);
-        ui->pushButton_10->setVisible(false);
-        ui->comboBox_7->setVisible(false);
-        ui->comboBox_8->setVisible(false);
-        ui->label_12->setVisible(false);
         ui->textEdit_2->setReadOnly(true);
     }
 }
@@ -1057,109 +988,10 @@ void MainWindow::timer()
                 const auto& data = _data_stat[it->get_suuid()];
                 it->set_data(data.first);
             }
-            it->running_on_check();
         }
     }
 
     _data_stat.clear();
-
-    std::unordered_set<std::int32_t> groups { 0, 1, 2, 3, 4 };
-    std::string path { "main(empty)" };
-
-    disk_usage::d_sz szd = DISK_USAGE.get(path, groups);
-    std::string sz_str;
-    if (szd.m_sz != 0)
-    {
-        double perc = double(szd.sz * 100) / double(szd.m_sz);
-        sz_str += basefunc_std::to_string_double(perc, 1);
-    }
-
-    ui->lcdNumber->display(QString::fromStdString(sz_str));
-
-    while (model->rowCount() != 0)
-    {
-        model->removeRow(0);
-    }
-
-    std::unordered_map<std::int32_t, QColor> colors
-    {
-        { 0, { 252, 186, 3 } },
-        { 1, { 11, 61, 224 } },
-        { 2, { 224, 11, 11 } },
-        { 3, { 1, 140, 27 } },
-        { 4, { 89, 1, 140 } }
-    };
-
-    std::unordered_map<std::uint32_t, disk_usage::data> du_data = DISK_USAGE.get();
-
-    std::unordered_map<std::int32_t, std::int32_t> free_sizes_by_groups;
-    for (const auto& it : du_data)
-    {
-        auto f = it.second.szs.find(path);
-        if (f != it.second.szs.end())
-        {
-            for (const auto& it2 : f->second)
-            {
-                const disk_usage::d_sz& _d = it2.second;
-                free_sizes_by_groups[_d.group] += _d.m_sz - _d.sz;
-            }
-        }
-    }
-
-    std::int32_t row { 0 };
-    for (const std::int32_t group : groups)
-    {
-        QColor c { 150, 255, 140 };
-        auto f_c = colors.find(group);
-        if (f_c != colors.end())
-        {
-            c = f_c->second;
-        }
-
-        std::int32_t free_space { free_sizes_by_groups[group] };
-
-        model->insertRows(row, 1, QModelIndex());
-        model->setData(model->index(row, 0, QModelIndex()), "group " + QString::number(group));
-        model->setData(model->index(row, 1, QModelIndex()), QString::number(free_space));
-        model->setData(model->index(row, 0, QModelIndex()), c, Qt::DecorationRole);
-
-        ++row;
-    }
-
-    bool ok { true };
-    {
-        std::lock_guard<std::mutex> _{ lock_all_statuses };
-
-        for (const auto& it : all_statuses)
-        {
-            if (!it.second)
-            {
-                ok = false;
-                break;
-            }
-        }
-    }
-
-    {
-        QColor col = ok ? Qt::green : Qt::red;
-
-        int w = ui->label_14->width() - 2;
-        int h = ui->label_14->height() - 2;
-
-        QPixmap pixmap(w + 2, h + 2);
-        pixmap.fill(QColor("transparent"));
-
-        QPainter painter(&pixmap);
-
-        painter.setBrush(QBrush(col));
-
-        painter.setPen(Qt::NoPen);
-        QRect r(QPoint(0, 0), QSize(w, h));
-        r.moveCenter(QPoint(w / 2, h / 2));
-        painter.drawEllipse(r);
-
-        ui->label_14->setPixmap(pixmap);
-    }
 }
 
 void MainWindow::set_item_state(const std::uint32_t uuid, bool status)

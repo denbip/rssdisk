@@ -49,8 +49,7 @@ HEADERS  += mainwindow.h \
     ../../../libs/gost_28147_89/gost_89.h \
     classes/qlabelclicked.h \
     ../../checker/checker.h \
-    classes/pieview.h \
-    classes/disk_usage.h
+    classes/pieview.h
 
 FORMS    += mainwindow.ui \
     widjets/server_item2.ui

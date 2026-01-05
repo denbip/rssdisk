@@ -13,11 +13,8 @@
 #include <unordered_map>
 #include "../../../libs/json/json/json.h"
 #include "../../../libs/basefunc_std.h"
-#include "classes/disk_usage.h"
 #include "../mainwindow.h"
 #include <QProgressBar>
-
-extern disk_usage DISK_USAGE;
 
 namespace Ui {
 class server_item2;
@@ -36,9 +33,7 @@ public:
 
     void add_disk(const std::string& name, const std::string& fn = "", int curr_size = 0, int max_size = 0, int group = 0);
     void set_file_preview(const std::string& name);
-    void set_is_running_on_check(bool b);
     std::uint32_t get_suuid() const { return suuid; }
-    void running_on_check();
     void set_data(const std::string& data);
     bool get_is_write_selected() const;
 

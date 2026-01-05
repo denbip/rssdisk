@@ -20,9 +20,6 @@
 #include "../../../libs/timer.h"
 #include "classes/pieview.h"
 #include <QStandardItemModel>
-#include "classes/disk_usage.h"
-
-extern disk_usage DISK_USAGE;
 
 namespace Ui {
 class MainWindow;
@@ -94,9 +91,6 @@ private:
 
     std::unordered_map<std::uint32_t, std::pair<std::string, std::int32_t>> _data_stat;
     std::mutex _lock_ui;
-
-    QAbstractItemModel *model;
-    PieView* pie_1;
 
     static std::mutex lock_all_statuses;
     static std::unordered_map<std::uint32_t, bool> all_statuses;

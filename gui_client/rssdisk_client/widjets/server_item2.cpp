@@ -27,10 +27,6 @@ server_item2::server_item2(QWidget *parent, const std::string &ip, std::int32_t 
     ui->label_3->setVisible(false);
     ui->label_4->setVisible(false);
 
-    QSizePolicy sp_retain = ui->label_5->sizePolicy();
-    sp_retain.setRetainSizeWhenHidden(true);
-    ui->label_5->setSizePolicy(sp_retain);
-
     suuid = id;
     name_to_preveue = "";
 }
@@ -87,22 +83,6 @@ void server_item2::add_disk(const std::string &name, const std::string &fn, int 
     }
 }
 
-void server_item2::set_is_running_on_check(bool b)
-{
-    is_running_check = b;
-    if (!is_running_check)
-    {
-        ui->label_5->setVisible(true);
-    }
-}
-
-void server_item2::running_on_check()
-{
-    if (!is_running_check) return;
-    bool to_set { ui->label_5->isVisible() };
-    ui->label_5->setVisible(!to_set);
-}
-
 void server_item2::set_data(const std::string& data)
 {
     if (!data.empty())
@@ -139,8 +119,6 @@ void server_item2::set_data(const std::string& data)
                                 {
                                     l_sz.sz = s_mb;
                                     l_sz.m_sz = max_s_mb;
-
-                                    DISK_USAGE.set_size(suuid, l_sz.group, subfolder_name, folder_name, s_mb, max_s_mb);
 
                                     std::string sz;
                                     if (max_s_mb != 0)
