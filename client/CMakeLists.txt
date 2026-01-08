@@ -21,7 +21,8 @@ file(GLOB LIB_FILES
     "${PAHT_LIB}/gost_28147_89/gost_89.cpp"
     "rssdisk_pool.cpp" )
 
-ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_LIST} ${LIB_FILES})
+#ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRC_LIST} ${LIB_FILES})
+ADD_LIBRARY(${PROJECT_NAME} STATIC ${SRC_LIST} ${LIB_FILES})
 target_link_libraries(${PROJECT_NAME} z cryptopp)
 
 
