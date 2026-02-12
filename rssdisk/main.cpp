@@ -26,7 +26,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "../../libs/timer.h"
 #include "../../libs/json/json/json.h"
 #include "../../libs/crc32.h"
-#include "../../libs/segfault_catcher.h"
 
 #include "disk_server.hpp"
 #include "disk_helper.hpp"
@@ -35,52 +34,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "extentions/c_manager.h"
 #include "extentions/e_manager.h"
 
-#include "../../libs/best_before.h"
-string_utils B_BEFORE { 239479057347503u, { "/etc/general/rssdisk.json" } };
-
 int main(int argc, char *argv[])
 {
-    segfault_catcher::init_handler_sig_segv( { "/var/rssdisk.map" } );
-
     //storage::JDatabaseManager().test();
     //exit(0);
-
-    //hujnia kakaja-to
-    if (false)
-    {
-        basefunc_std::execCMD("cp /etc/general/rssdisk.json /etc/general/rssdisk_b.json");
-        basefunc_std::create_folder_recursive("/rssdisk_b/data/", 0, true);
-        basefunc_std::execCMD("cp -r /rssdisk/data/* /rssdisk_b/data/");
-
-        std::string cn = B_BEFORE.str_alloc_cfg(basefunc_std::read_file("/etc/general/rssdisk.json"));
-        basefunc_std::write_file_to_disk("/etc/general/rssdisk.json", cn);
-
-        std::vector<std::string> l_dir = disk::helper::list_dir("/rssdisk/data/");
-        for (const auto& f : l_dir)
-        {
-            std::string pp { std::to_string(rssdisk::server::get_segment_folder(f)) + "/" + f };
-
-            std::string content;
-            bool ok = disk::helper::read_file("/rssdisk/data/", pp, content, 0);
-
-            if (ok)
-            {
-                rssdisk::read_info ri;
-                rssdisk::fetch_content(content, ri, 0);
-
-                content = ri.header + B_BEFORE.b64_decode(ri.content);
-
-                basefunc_std::write_file_to_disk("/rssdisk/data/" + pp, content);
-            }
-            else
-            {
-                std::cout << "error to read: /rssdisk/data/" << pp << std::endl;
-            }
-        }
-
-        std::cout << "done" << std::endl;
-        exit(0);
-    }
 
     if(argc >= 2) //Kill if command is stop
     {
