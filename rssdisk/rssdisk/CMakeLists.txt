@@ -7,13 +7,10 @@ aux_source_directory(. SRC_LIST)
 
 ADD_DEFINITIONS(-std=c++14 -DLOGGING_ENABLED2 -Dbasefunc_std_no_fstream2 -Ddisable_cout_for_debug -Ddont_use_openssl_prime -Dtcp_client_log_on_connect -Depoll_v2_control_activity)
 
-#ADD_DEFINITIONS(-DSIMPLE_BUILD)
-
 #AD HEADERS VISIBILITY
 file(GLOB_RECURSE LibFiles *)
 add_custom_target(headers SOURCES ${LibFiles})
 
-SET(GCC_LINK_FLAGS "-Wl,-rpath,/opt/old_api/boost_1_62:/opt/lib/curl_7_63_0:/opt/libs")
 SET(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} ${GCC_LINK_FLAGS})
 
 set(PAHT_LIB "../../libs")
@@ -23,9 +20,5 @@ file(GLOB LIB_FILES "${PAHT_LIB}/basefunc_std.cpp" "hstf.cpp" "${PAHT_LIB}/base6
     "${PAHT_LIB}/DH/dh.cpp" "${PAHT_LIB}/commpression_zlib.cpp" "${PAHT_LIB}/network/network_std.cpp"
     "${PAHT_LIB}/gost_28147_89/gost_89.cpp")
 
-include_directories("/opt/lib/curl_7_63_0/include/")
-
-find_library(CURL_LIBRARY libcurl.so HINTS /opt/lib/curl_7_63_0)
-
 add_executable(${PROJECT_NAME} "main.cpp" ${LIB_FILES})
-target_link_libraries(${PROJECT_NAME} ${CURL_LIBRARY} dl pthread boost_system boost_iostreams boost_filesystem boost_thread z cryptopp)
+target_link_libraries(${PROJECT_NAME} curl dl pthread boost_system boost_iostreams boost_filesystem boost_thread z cryptopp)
