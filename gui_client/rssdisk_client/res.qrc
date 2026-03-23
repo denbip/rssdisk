@@ -1,8 +1,0 @@
-<RCC>
-    <qresource prefix="/img/prefix1">
-        <file>resources/hdd.png</file>
-        <file>resources/ok.png</file>
-        <file>resources/delete.png</file>
-        <file>resources/ram.png</file>
-    </qresource>
-</RCC>
