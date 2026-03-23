@@ -131,7 +131,6 @@ bool server::init_server_settings()
                     if (path_control.count(dir.p) != 0)
                     {
                         basefunc_std::cout(dir.p + " was already added", "rssdisk", basefunc_std::COLOR::RED_COL);
-                        apg_alert_3(dir.p + " was already added", "rssdisk", "rssdisk", 1);
                         return false;
                     }
                     path_control.emplace(dir.p);
@@ -144,18 +143,15 @@ bool server::init_server_settings()
             catch(std::exception& ex)
             {
                 basefunc_std::cout(std::string("cant_load_settings ") + std::string(ex.what()), "rssdisk", basefunc_std::COLOR::RED_COL);
-                apg_alert_3(std::string("cant_load_settings ") + std::string(ex.what()), "rssdisk", "rssdisk", 1);
             }
         }
         else
         {
-            apg_alert_3("cant_read_settings_file", "rssdisk", "rssdisk", 1);
             return false;
         }
     }
     else
     {
-        apg_alert_3("cant_read_settings_self_ip", "rssdisk", "rssdisk", 1);
         return false;
     }
 

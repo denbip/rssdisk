@@ -47,8 +47,6 @@ int main(int argc, char *argv[])
 
     basefunc_std::set_path_log("/var/log/rssdisk/");
 
-    apg_alert_3("Starting the service...", "rssdisk", "rssdisk", 1);
-
     std::atomic_bool done_atomic { ATOMIC_VAR_INIT(true) };
 
     std::string conf_path { "/etc/general/" };
@@ -86,7 +84,6 @@ int main(int argc, char *argv[])
     if (!ok_hstf)
     {
         basefunc_std::cout("Can't init hstf", "error", basefunc_std::COLOR::RED_COL);
-        apg_alert_3("Can't init hstf...", "rssdisk", "rssdisk", 1);
         exit(0);
     }
 
