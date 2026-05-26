@@ -2,6 +2,8 @@
 
 using namespace storage;
 
+//#define jdb_cout 1
+
 JDatabaseManager::Metadata JDatabaseManager::retrieveCompressedData(const std::string& file) const
 {
     JDatabaseManager::Metadata ret;
@@ -186,6 +188,10 @@ std::string JDatabaseManager::fetch(const std::string& file, const std::string& 
                 {
                     std::uint32_t ind_f_sz = m.retrieve_uint32_t_c(l, 4, tmp);
                     m.retrieve_c(l, ind_f_sz, tmp);
+
+#ifdef jdb_cout
+                    std::cout << tmp << std::endl;
+#endif
 
                     auto f_in_search = searches.find(tmp);
                     if (f_in_search != searches.end())
@@ -1327,10 +1333,14 @@ void JDatabaseManager::test() const
 
     int v = 2;
     rssdisk::w_type _w_type { rssdisk::w_type::jdb };
-    std::string filename { "/var/test.jdb" };
+    std::string filename { "/var/a" };
     bool compress_index { false };
     bool compress_data { true };
     std::int32_t compress_particularly_data { 1000 };
+
+    std::cout << fetch(filename, "{\"tq\":\"!~rp~!\",\"t\":{\"$gt\":1779806035}}", rssdisk::read_options::no_compress | rssdisk::read_options::no_header) << std::endl;
+
+    return;
 
     //std::cout << get(filename, "{\"cid\":{\"$in\":[\"79192353660\"]}}", rssdisk::read_options::no_compress | rssdisk::read_options::no_header) << std::endl;
 
