@@ -1,29 +1,6 @@
 #ifndef rssdisk_pool_H
 #define rssdisk_pool_H
 
-/*
-Copyright (c) 2010 Denis Kozhar (denbip@gmail.com)
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
 #include <set>
 
 #include "../../libs/network/tcp_client.hpp"
@@ -38,17 +15,13 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace rssdisk
 {
-    struct NotificationHandler
+    struct helper
     {
-        using CallbackFunction = std::function<void(const std::string& message, const std::string& title, const std::string& category, int32_t duration)>;
-        static CallbackFunction notifyCallback;
-
-        static void notify(const std::string& message, const std::string& title, const std::string& category, int32_t duration)
+        typedef std::function<void(const std::string& text, const std::string& header, const std::string& topic, std::int32_t ttl)> alert_callback;
+        static alert_callback alert_cb;
+        static void alert(const std::string& text, const std::string& header, const std::string& topic, std::int32_t ttl)
         {
-            if (notifyCallback)
-            {
-                notifyCallback(message, title, category, duration);
-            }
+            if (alert_cb != nullptr) alert_cb(text, header, topic, ttl);
         }
     };
 
@@ -86,7 +59,8 @@ namespace rssdisk
             timeout,
             servers_not_found,
             error_specify_the_group,
-            count_tms_files_less_than_requeired
+            count_tms_files_less_than_requeired,
+            readed_particulary
         };
 
         enum class read_info_type
@@ -102,6 +76,9 @@ namespace rssdisk
             read_cdb,
             read_cdb_tms_newest,
             read_cdb_all,
+            read_streamed,
+            read_streamed_unsecure,
+            read_sdb,
             read_edb_events
         };
 
@@ -165,6 +142,8 @@ namespace rssdisk
         void wait_for_init_connections(const std::set<std::int32_t>& wait_network_groups, std::int32_t wait_ms = 2000, bool alert_not_connected = true);
         void stop();
 
+        static std::string prepare_sdb(const std::string& data, const Json::Value& sett);
+        static std::string prepare_sdb(const std::string& data, const std::string& sett);
         static std::string prepare_jdb(const Json::Value& data, const Json::Value& sett);
         static std::string prepare_jdb(const std::string& data, const std::string& sett);
         static std::string prepare_cdb(const std::string& key, const std::string& val, std::int32_t ttl);
@@ -191,6 +170,7 @@ namespace rssdisk
         client* operator ->() { return this; }
 
         std::int32_t get_count_servers_connected(const write_options& w_opt);
+        std::int32_t get_count_servers(const write_options& w_opt);
 
         std::vector<read_responce> get_servers_statuses(std::int32_t timeout_mili_sec = 1000);
         std::vector<read_responce> get_servers_ping(std::int32_t timeout_mili_sec = 1000);
@@ -214,10 +194,101 @@ namespace rssdisk
                              std::set<std::uint32_t> only_ips = {},
                              bool to_all = false);
 
+        read_res command_partitional(std::unordered_map<std::string, std::string>& sub_readed,
+                                     const std::string &filename,
+                                     std::unordered_set<std::string> sub_elements,
+                                     std::int32_t timeout_mili_sec,
+                                     std::vector<std::int32_t> preffered_netwok_groups,
+                                     rw_preference rw_pref,
+                                     bool skip_aes);
+
         void re_open_tcp();
         std::vector<read_responce_tcp> get_tcp_statuses();
 
         static Json::Value parse_cdb_all(const std::vector<read_info>& info, cdb_out_data_format frm);
+
+        static bool fetch_sdb_string(const read_info& it, std::unordered_map<std::int64_t, std::string>& ret)
+        {
+            std::uint8_t holder_presize { 0 };
+            bitbase::chars_to_numeric(it.content.substr(0, 1), holder_presize);
+            //std::cout << network_std::inet_ntoa(it.ip) << " holder_presize " << (int)holder_presize << " header " << it.header << " it.content.size() " << it.content.size() << std::endl;
+            std::size_t p { 1 };
+            while (p < it.content.size())
+            {
+                std::int64_t i { 0 };
+                if (p + 8 > it.content.size()) break;
+                bitbase::chars_to_numeric(it.content.substr(p, 8), i);
+                p += 8;
+
+                std::uint32_t sz { 0 };
+                if (p + holder_presize > it.content.size()) break;
+                bitbase::chars_to_numeric(it.content.substr(p, holder_presize), sz);
+
+                p += holder_presize;
+                if (p + sz > it.content.size()) break;
+                std::string data { it.content.substr(p, sz) };
+                p += sz;
+
+                ret.insert( { i, std::move(data) } );
+            }
+            if (p != it.content.size())
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        template<std::size_t BYTES_STR_SIZE, class T>
+        static bool fetch_sdb(const read_info& it, std::unordered_map<std::int64_t, T>& ret)
+        {
+            std::uint8_t holder_presize { 0 };
+            bitbase::chars_to_numeric(it.content.substr(0, 1), holder_presize);
+            //std::cout << "holder_presize " << (int)holder_presize << " header " << it.header << " it.content.size() " << it.content.size() << std::endl;
+            std::size_t p { 1 };
+            while (p < it.content.size())
+            {
+                std::int64_t i { 0 };
+                if (p + 8 > it.content.size()) break;
+                bitbase::chars_to_numeric(it.content.substr(p, 8), i);
+                p += 8;
+
+                std::uint32_t sz { 0 };
+                if (p + holder_presize > it.content.size()) break;
+                bitbase::chars_to_numeric(it.content.substr(p, holder_presize), sz);
+
+                p += holder_presize;
+                if (p + sz > it.content.size()) break;
+                std::string data { it.content.substr(p, sz) };
+                p += sz;
+
+                streamer<BYTES_STR_SIZE> str { std::move(data) };
+                T t2;
+                str >> t2;
+                t2.id = i;
+
+                ret.insert( { i, std::move(t2) } );
+            }
+            if (p != it.content.size())
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        template<std::size_t BYTES_STR_SIZE, class T>
+        static bool fetch_sdb(const std::vector<read_info>& info, std::unordered_map<std::int64_t, T>& ret, std::size_t index = 0)
+        {
+            if (index < info.size())
+            {
+                return fetch_sdb<BYTES_STR_SIZE, T>(info[index], ret);
+            }
+            else
+            {
+                return false;
+            }
+        }
 
         std::int32_t pool_index = 0;
 
@@ -229,6 +300,8 @@ namespace rssdisk
         std::int32_t pop_index_rand(std::map<std::int32_t, std::vector<std::int32_t> >& servers, std::unordered_set<std::int32_t>& used_groups, std::int32_t preffered_network);
 
         std::vector<std::int32_t> get_free_size_servers(std::int32_t timeout_mili_sec = 1000);
+
+
 
         static const crc32m CRC32;
 
@@ -242,120 +315,126 @@ namespace rssdisk
 
     class pool
     {
-        class ClientMutex
+        class cli_mutex
         {
         public:
-            ClientMutex(std::int32_t initialMinClients, std::int32_t minimumClients, std::int32_t maximumClients, std::vector<std::int32_t> networkGroups)
-                : startMinClients(initialMinClients), minClients(minimumClients), maxClients(maximumClients), networkGroups(networkGroups)
+            cli_mutex(std::int32_t start_min_clients_, std::int32_t min_clients_, std::int32_t max_clients_, std::vector<std::int32_t> netwok_groups_) : start_min_clients(start_min_clients_), min_clients(min_clients_), max_clients(max_clients_), netwok_groups(netwok_groups_)
             {
+
             }
 
-            std::shared_ptr<client> acquire(std::int32_t& index, const std::set<std::int32_t>& waitNetworkGroups)
+            std::shared_ptr<client> get(std::int32_t& index, const std::set<std::int32_t>& wait_network_groups)
             {
-                std::shared_ptr<client> clientPtr { nullptr };
+                std::shared_ptr<client> ret { nullptr };
                 index = -1;
-                bool connectionNeeded { false };
+                bool need_to_connect { false };
 
                 {
-                    std::lock_guard<std::mutex> lockGuard { mutexLock };
+                    std::lock_guard<std::mutex> _{ lock };
                     for (auto i = 0; i < clients.size(); ++i)
                     {
-                        std::int32_t poolIndex = clients[i]->pool_index;
+                        std::int32_t _pool_index = clients[i]->pool_index;
 
-                        if (inUse.count(poolIndex) == 0)
+                        if (in_use.count(_pool_index) == 0)
                         {
-                            clientPtr = clients[i];
-                            index = poolIndex;
-                            activeClients[poolIndex] = date_time::current_date_time();
-                            inUse.emplace(poolIndex);
+                            ret = clients[i];
+                            index = _pool_index;
+                            using_clients[_pool_index] = date_time::current_date_time();
+                            in_use.emplace(_pool_index);
                             break;
                         }
                     }
 
-                    if (index == -1 && clients.size() < maxClients) // Not found
+                    if (index == -1 && clients.size() < max_clients) //not found
                     {
-                        clientPtr = std::make_shared<client>();
-                        bool initSuccess = clientPtr->init_settings(settingsPath, networkGroups);
+                        ret = std::make_shared<rssdisk::client>();
+                        bool ok_init = ret->init_settings(settings_path, netwok_groups);
 
-                        if (initSuccess)
+                        if (ok_init)
                         {
-                            connectionNeeded = true;
+                            need_to_connect = true;
 
-                            if (!availableIndices.empty())
+                            if (!free_indexex.empty())
                             {
-                                std::int32_t poolIndex = availableIndices.back();
-                                availableIndices.pop_back();
+                                std::int32_t _pool_index = free_indexex.back();
+                                free_indexex.pop_back();
 
-                                clientPtr->pool_index = poolIndex;
-                                clients.push_back(clientPtr);
-                                index = poolIndex;
-                                activeClients[poolIndex] = date_time::current_date_time();
-                                inUse.emplace(poolIndex);
+                                ret->pool_index = _pool_index;
+                                clients.push_back(ret);
+                                index = _pool_index;
+                                using_clients[_pool_index] = date_time::current_date_time();
+                                in_use.emplace(_pool_index);
+
+                                //basefunc_std::log("new " + std::to_string(_pool_index), "debug_rssdisk_pool");
                             }
                         }
                     }
                 }
 
-                if (connectionNeeded)
+                if (need_to_connect)
                 {
-                    clientPtr->wait_for_init_connections(waitNetworkGroups, 2000, true);
+                    ret->wait_for_init_connections(wait_network_groups, 2000, true);
                 }
 
                 if (index == -1)
                 {
-                    NotificationHandler::notify("Pool is full", "rssdisk_pool", "rssdisk", 1);
+                    //std::cout << "get" << std::endl;
+                    helper::alert("Pool is full", "rssdisk_pool", "rssdisk", 1);
                 }
 
-                return clientPtr;
+                return ret;
             }
 
-            void release(std::int32_t index)
+            void free(std::int32_t index)
             {
-                std::lock_guard<std::mutex> lockGuard { mutexLock };
-                inUse.erase(index);
-                freeCondition.notify_all();
+                std::lock_guard<std::mutex> _{ lock };
+                in_use.erase(index);
+                free_cond.notify_all();
             }
 
-            void initialize(const std::string& settingsPath_)
+            void init(const std::string& settings_path_)
             {
-                std::lock_guard<std::mutex> lockGuard { mutexLock };
-                settingsPath = settingsPath_;
+                std::lock_guard<std::mutex> _{ lock };
+                settings_path = settings_path_;
                 int i = 0;
-                for (; i < startMinClients; ++i)
+                for (; i < start_min_clients; ++i)
                 {
-                    std::shared_ptr<client> _client = std::make_shared<client>();
-                    bool initSuccess = _client->init_settings(settingsPath, networkGroups);
-                    if (initSuccess)
+                    std::shared_ptr<client> c = std::make_shared<rssdisk::client>();
+                    bool ok_init = c->init_settings(settings_path, netwok_groups);
+                    if (ok_init)
                     {
-                        _client->pool_index = i;
-                        _client->wait_for_init_connections({}, 0, false);
-                        clients.push_back(_client);
+                        c->pool_index = i;
+                        c->wait_for_init_connections({}, 0, false);
+                        clients.push_back(c);
                     }
                     else
                     {
-                        availableIndices.push_back(i);
+                        free_indexex.push_back(i);
                     }
                 }
-                for (; i < maxClients; ++i)
+                for (; i < max_clients; ++i)
                 {
-                    availableIndices.push_back(i);
+                    free_indexex.push_back(i);
                 }
 
-                std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait for pool connections
+                std::this_thread::sleep_for(std::chrono::seconds(1)); //wait for pool connections
             }
 
             bool stop()
             {
+                //std::cout << "stop" << std::endl;
                 {
-                    std::lock_guard<std::mutex> lockGuard { mutexLock };
-                    minClients = 0;
-                    maxClients = 0;
-                    availableIndices.clear();
+                    std::lock_guard<std::mutex> _{ lock };
+                    min_clients = 0;
+                    max_clients = 0;
+                    free_indexex.clear();
                     clients.clear();
                 }
+                //std::cout << "stop2" << std::endl;
 
-                std::unique_lock<std::mutex> lock { mutexLock };
-                if (!freeCondition.wait_for(lock, std::chrono::seconds(5), [this](){ return inUse.empty(); }))
+                //wait for all clients ends to use clients ? (in_use size must be 0)
+                std::unique_lock<std::mutex> l { lock };
+                if (!free_cond.wait_for(l, std::chrono::seconds(5), [this](){ return in_use.empty(); }))
                 {
                     basefunc_std::cout("Timeout reached", "~rssdisk::pool", basefunc_std::COLOR::RED_COL);
                     return false;
@@ -366,75 +445,76 @@ namespace rssdisk
 
             void clear()
             {
-                std::vector<std::shared_ptr<client>> clientsToRelease;
+                std::vector<std::shared_ptr<client>> clients_to_release;
 
                 {
-                    date_time currentTime = date_time::current_date_time();
-                    std::vector<std::int32_t> toDelete;
-                    std::lock_guard<std::mutex> lockGuard { mutexLock };
+                    date_time c = date_time::current_date_time();
+                    std::vector<std::int32_t> del;
+                    std::lock_guard<std::mutex> _{ lock };
 
-                    if (clients.size() > minClients)
+                    if (clients.size() > min_clients)
                     {
                         for (int i = 0; i < clients.size(); ++i)
                         {
-                            std::int32_t poolIndex = clients[i]->pool_index;
+                            std::int32_t _pool_index = clients[i]->pool_index;
 
-                            auto found = activeClients.find(poolIndex);
-                            if (found != activeClients.end())
+                            auto f = using_clients.find(_pool_index);
+                            if (f != using_clients.end())
                             {
-                                if (found->second.secs_to(currentTime) >= 3600)
+                                if (f->second.secs_to(c) >= 3600)
                                 {
-                                    if (inUse.count(poolIndex) == 0)
+                                    if (in_use.count(_pool_index) == 0)
                                     {
-                                        toDelete.push_back(poolIndex);
+                                        del.push_back(_pool_index);
                                     }
                                 }
                             }
                         }
 
-                        for (auto i = 0; i < toDelete.size(); ++i)
+                        for (auto i = 0; i < del.size(); ++i)
                         {
-                            std::int32_t poolIndexToDelete = toDelete[i];
-                            for (int j = 0; j < clients.size(); ++j)
+                            std::int32_t _pool_index_del = del[i];
+                            for (int i = 0; i < clients.size(); ++i)
                             {
-                                if (clients[j]->pool_index == poolIndexToDelete)
+                                if (clients[i]->pool_index == _pool_index_del)
                                 {
-                                    clientsToRelease.push_back(clients[j]);
-                                    clients.erase(clients.begin() + j);
-                                    availableIndices.push_back(poolIndexToDelete);
+                                    clients_to_release.push_back(clients[i]);
+                                    clients.erase(clients.begin() + i);
+                                    free_indexex.push_back(_pool_index_del);
+                                    //basefunc_std::log("free " + std::to_string(_pool_index_del), "debug_rssdisk_pool");
                                     break;
                                 }
                             }
 
-                            if (clients.size() <= minClients) break;
+                            if (clients.size() <= min_clients) break;
                         }
                     }
                 }
             }
 
         private:
-            std::mutex mutexLock;
-            std::vector<std::shared_ptr<client>> clients;
-            std::unordered_map<std::int32_t, date_time> activeClients;
-            std::unordered_set<std::int32_t> inUse;
-            std::int32_t startMinClients;
-            std::int32_t minClients;
-            std::int32_t maxClients;
-            std::vector<std::int32_t> availableIndices;
-            std::vector<std::int32_t> networkGroups;
-            std::string settingsPath;
-            std::condition_variable freeCondition;
+            std::mutex lock;
+            std::vector<std::shared_ptr<client> > clients;
+            std::unordered_map<std::int32_t, date_time> using_clients;
+            std::unordered_set<std::int32_t> in_use;
+            std::int32_t start_min_clients;
+            std::int32_t min_clients;
+            std::int32_t max_clients;
+            std::vector<std::int32_t> free_indexex;
+            std::vector<std::int32_t> netwok_groups;
+            std::string settings_path;
+            std::condition_variable free_cond;
         };
 
     public:
         class guard
         {
         public:
-            guard(ClientMutex* cl_pool_, std::int32_t index_, std::shared_ptr<client> c_) : cl_pool(cl_pool_), index(index_), c(c_) { }
+            guard(cli_mutex* cl_pool_, std::int32_t index_, std::shared_ptr<client> c_) : cl_pool(cl_pool_), index(index_), c(c_) { }
 
             ~guard()
             {
-                cl_pool->release(index);
+                cl_pool->free(index);
             }
 
             client& operator ->() { return *c; }
@@ -443,7 +523,7 @@ namespace rssdisk
         private:
             std::shared_ptr<client> c = nullptr;
             std::int32_t index = -1;
-            ClientMutex* cl_pool;
+            cli_mutex* cl_pool;
         };
 
         pool(std::int32_t start_min_clients_, std::int32_t min_clients_, std::int32_t max_clients_, std::vector<std::int32_t> netwok_groups_ = {}) : cl_pool(start_min_clients_, min_clients_, max_clients_, netwok_groups_) { }
@@ -456,7 +536,7 @@ namespace rssdisk
         void init(const std::string& settings_path_)
         {
             is_running.store(true);
-            cl_pool.initialize(settings_path_);
+            cl_pool.init(settings_path_);
             thead_watcher = std::thread([this]()
             {
                 while (is_running.load(std::memory_order_acquire) && tm.wait_for(std::chrono::minutes(10)))
@@ -469,7 +549,7 @@ namespace rssdisk
         pool::guard get(std::set<std::int32_t> wait_network_groups = {})
         {
             std::int32_t index { -1 };
-            std::shared_ptr<client> c = cl_pool.acquire(index, wait_network_groups);
+            std::shared_ptr<client> c = cl_pool.get(index, wait_network_groups);
             return { &cl_pool, index, c };
         }
 
@@ -550,7 +630,7 @@ namespace rssdisk
                 }
                 else
                 {
-                    NotificationHandler::notify("write_delayed_cdb. Get pool error, stage " + std::to_string(i), "rssdisk_pool", "rssdisk", 1);
+                    helper::alert("write_delayed_cdb. Get pool error, stage " + std::to_string(i), "rssdisk_pool", "rssdisk", 1);
                 }
 
                 std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -565,7 +645,7 @@ namespace rssdisk
         static std::string get_default_prime_number() { return default_prime_number; }
 
     private:
-        ClientMutex cl_pool;
+        cli_mutex cl_pool;
         std::thread thead_watcher;
         ::thread::timer tm;
         std::atomic_bool is_running = ATOMIC_VAR_INIT(false);
