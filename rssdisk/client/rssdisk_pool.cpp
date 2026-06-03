@@ -1014,6 +1014,21 @@ std::int32_t client::get_count_servers_connected(const write_options& w_opt)
     return ret;
 }
 
+std::int32_t client::get_count_servers(const write_options& w_opt)
+{
+    std::int32_t ret { 0 };
+    for (int i = 0; i < clients.size(); ++i)
+    {
+        std::shared_ptr<tcp_client> c = clients[i];
+        if ((w_opt.rw_pref == rw_preference::any && c->can_use_in_any_rp()) ||
+            std::find(w_opt.preffered_netwok_groups.begin(), w_opt.preffered_netwok_groups.end(), c->get_network_group()) != w_opt.preffered_netwok_groups.end())
+        {
+            ++ret;
+        }
+    }
+    return ret;
+}
+
 void client::dispatch_events(int minimum_m_sec_to_dispatch)
 {
     std::chrono::time_point<std::chrono::steady_clock> t_now = std::chrono::steady_clock::now();
