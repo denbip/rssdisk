@@ -1,7 +1,7 @@
 #include "rssdisk_pool.hpp"
 using namespace rssdisk;
 
-helper::alert_callback helper::alert_cb = nullptr;
+NotificationHandler::CallbackFunction NotificationHandler::notifyCallback = nullptr;
 
 std::string rssdisk::pool::default_prime_number;
 
@@ -68,7 +68,7 @@ bool client::init_settings(const std::string& config_file, std::vector<std::int3
 
                     cl->timeout.set_state_blocked_callback_callback([ip]()
                     {
-                        helper::alert("Detected timeout " + ip, "rssdisk", "rssdisk", 1);
+                        NotificationHandler::notify("Detected timeout " + ip, "rssdisk", "rssdisk", 1);
                     });
 
                     clients_.push_back(cl);
@@ -80,7 +80,7 @@ bool client::init_settings(const std::string& config_file, std::vector<std::int3
     catch(std::exception& ex)
     {
         basefunc_std::cout(std::string("cant_load_settings ") + std::string(ex.what()), "rssdisk::pool", basefunc_std::COLOR::RED_COL);
-        helper::alert(std::string("cant_load_settings ") + std::string(ex.what()), "pool", "rssdisk", 1);
+        NotificationHandler::notify(std::string("cant_load_settings ") + std::string(ex.what()), "pool", "rssdisk", 1);
         return false;
     }
 
@@ -158,7 +158,7 @@ void client::wait_for_init_connections(const std::set<std::int32_t>& wait_networ
                 }
 
                 basefunc_std::cout(std::to_string(counts) + " (" + ips_str + ") were not connected at init", "rssdisk::pool::init", basefunc_std::COLOR::RED_COL);
-                helper::alert(std::to_string(counts) + " (" + ips_str + ") were not connected at init", "rssdisk::pool::init", "rssdisk", 1);
+                NotificationHandler::notify(std::to_string(counts) + " (" + ips_str + ") were not connected at init", "rssdisk::pool::init", "rssdisk", 1);
             }
         }
 
@@ -275,11 +275,7 @@ client::write_info client::write_file(w_type write_type, const std::string& file
         }
     }
 
-    if (write_type == rssdisk::w_type::sdb)
-    {
-        w_opt.count_server_to_write = count_servers_pool_indexex;
-    }
-    else if (w_opt.count_server_to_write > count_servers_pool_indexex)
+    if (w_opt.count_server_to_write > count_servers_pool_indexex)
     {
         return { -1 };
     }
@@ -341,9 +337,9 @@ client::write_info client::write_file(w_type write_type, const std::string& file
             tcp_client::socket_status state = c->get_socket_state();
             if (state == tcp_client::socket_status::connected)
             {
-                std::int32_t netw_gr_cl = c->get_network_group();
-                std::int32_t identy = c->get_identy();
-                std::uint32_t ip = network_std::inet_aton(c->get_ip());
+                const std::int32_t netw_gr_cl = c->get_network_group();
+                const std::int32_t identy = c->get_identy();
+                const std::uint32_t ip { c->get_uip() };
 
                 //set read callback
                 if (_wait_responce)
@@ -371,7 +367,7 @@ client::write_info client::write_file(w_type write_type, const std::string& file
                                 }
                                 else if (status.compare("09") == 0)
                                 {
-                                    helper::alert("Filename too long: " + filename, "pool", "rssdisk", 1);
+                                    NotificationHandler::notify("Filename too long: " + filename, "pool", "rssdisk", 1);
                                 }
                                 else
                                 {
@@ -418,11 +414,6 @@ client::write_info client::write_file(w_type write_type, const std::string& file
                     flags = std::to_string(static_cast<int>(write_type));
                     flags += bitbase::numeric_to_chars(ret.file_tms);
                 }
-                else if (write_type == w_type::sdb)
-                {
-                    flags = std::to_string(static_cast<int>(write_type));
-                    flags += bitbase::numeric_to_chars(ret.file_tms) + bitbase::numeric_to_chars(ret.file_crc32);
-                }
 
                 std::string to_write;
 
@@ -435,15 +426,15 @@ client::write_info client::write_file(w_type write_type, const std::string& file
                 }
                 else if (write_type == w_type::cdb) //tms[00000000] crc32[00000000] ttl[0000] filename_size[0000] content_size[0000] key content
                 {
-                    if (_wait_responce) to_write = "24";
-                    else to_write = "25";
+                    if (_wait_responce) to_write = "32";
+                    else to_write = "33";
 
                     to_write += std::to_string(identy) + client::prepare_cdb(filename, content, w_opt.ttl);
                 }
                 else if (write_type == w_type::cdbm) //tms[00000000] crc32[00000000] ttl[0000] filename_size[0000] content_size[0000] key content
                 {
-                    if (_wait_responce) to_write = "24";
-                    else to_write = "25";
+                    if (_wait_responce) to_write = "32";
+                    else to_write = "33";
 
                     to_write += std::to_string(identy) + content;
                 }
@@ -524,6 +515,87 @@ client::write_info client::write_file(w_type write_type, const std::string& file
         }
 
         loop_send = w_opt.count_server_to_write - count_ok; //request to new servers to write
+    }
+
+    if (write_type == w_type::cdb || write_type == w_type::cdbm)
+    {
+        for (int i = 0; i < clients.size(); ++i)
+        {
+            std::shared_ptr<tcp_client> c = clients[i];
+
+            if (ips_ok.count(c->get_uip()) != 0) continue;
+
+            if (c->get_socket_state() == tcp_client::socket_status::connected && !c->timeout.is_timeout_detected())
+            {
+                if ((w_opt.rw_pref == rw_preference::any && c->can_use_in_any_rp()) ||
+                    std::find(w_opt.preffered_netwok_groups.begin(), w_opt.preffered_netwok_groups.end(), c->get_network_group()) != w_opt.preffered_netwok_groups.end())
+                {
+                    if (w_opt.only_ips.empty() || w_opt.only_ips.count(c->get_uip()) != 0)
+                    {
+                        const std::int32_t identy = c->get_identy();
+
+                        std::string remover;
+                        if (write_type == w_type::cdb)
+                        {
+                            remover = "33" + std::to_string(identy) + client::prepare_cdb(filename, "", 1);;
+                        }
+                        else if (write_type == w_type::cdbm)
+                        {
+                            std::string cutted;
+
+                            std::int32_t pos { 0 };
+                            while (true)
+                            {
+                                if (content.size() > pos + 28)
+                                {
+                                    const std::int32_t block_pos { pos };
+                                    std::int32_t header_bytes { 0 };
+                                    std::int32_t content_bytes { 0 };
+
+                                    pos += 20;
+                                    bitbase::chars_to_numeric(content.substr(pos, 4), header_bytes);
+                                    pos += 4;
+                                    bitbase::chars_to_numeric(content.substr(pos, 4), content_bytes);
+                                    pos += 4;
+
+                                    if (content.size() >= pos + header_bytes)
+                                    {
+                                        pos += header_bytes;
+
+                                        if (content.size() >= pos + content_bytes)
+                                        {
+                                            cutted += content.substr(block_pos, 24);
+                                            cutted += bitbase::numeric_to_chars(std::int32_t(0));
+                                            cutted += content.substr(block_pos + 28, header_bytes);
+
+                                            pos += content_bytes;
+
+                                        }
+                                        else
+                                        {
+                                            break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    break;
+                                }
+                            }
+
+                            remover = "33" + std::to_string(identy) + cutted;
+                        }
+
+                        std::shared_ptr<tcp_client::async_send_item> async_send = std::make_shared<tcp_client::async_send_item>(std::move(remover), identy, nullptr);
+                        c->send_async(async_send);
+                    }
+                }
+            }
+        }
     }
 
     for (int i = 0; i < v_async_send_item.size(); ++i)
@@ -942,21 +1014,6 @@ std::int32_t client::get_count_servers_connected(const write_options& w_opt)
     return ret;
 }
 
-std::int32_t client::get_count_servers(const write_options& w_opt)
-{
-    std::int32_t ret { 0 };
-    for (int i = 0; i < clients.size(); ++i)
-    {
-        std::shared_ptr<tcp_client> c = clients[i];
-        if ((w_opt.rw_pref == rw_preference::any && c->can_use_in_any_rp()) ||
-            std::find(w_opt.preffered_netwok_groups.begin(), w_opt.preffered_netwok_groups.end(), c->get_network_group()) != w_opt.preffered_netwok_groups.end())
-        {
-            ++ret;
-        }
-    }
-    return ret;
-}
-
 void client::dispatch_events(int minimum_m_sec_to_dispatch)
 {
     std::chrono::time_point<std::chrono::steady_clock> t_now = std::chrono::steady_clock::now();
@@ -1293,7 +1350,7 @@ client::read_responce client::read_file(const std::string& filename, std::string
                 {
                     basefunc_std::cout("Waiting for previous answer", "rssdisk_pool_client_read_file", basefunc_std::COLOR::RED_COL);
                     std::shared_ptr<tcp_client> c = clients[cl_index];
-                    helper::alert("rssdisk_pool_client_read_file " + c->get_ip(), "rssdisk", "rssdisk", 1);
+                    NotificationHandler::notify("rssdisk_pool_client_read_file " + c->get_ip(), "rssdisk", "rssdisk", 1);
                 }
 
                 --count_awainting_responses;
@@ -1336,7 +1393,7 @@ client::read_responce client::read_file(const std::string& filename, std::string
 
         if (content.size() >= 3 && content.substr(0, 3).compare("jdb") == 0) is_jdb_full = true;
 
-        if (ri.file_type != w_type::insert_only_without_compress && ri.file_type != w_type::updatable_without_compress && ri.file_type != w_type::appendable && ri.file_type != w_type::sdb && !is_jdb_full && !read_many) content = commpression_zlib::decompress_string(content);
+        if (ri.file_type != w_type::insert_only_without_compress && ri.file_type != w_type::updatable_without_compress && ri.file_type != w_type::appendable && !is_jdb_full && !read_many) content = commpression_zlib::decompress_string(content);
     }
 
     if (content.empty())
@@ -1428,8 +1485,6 @@ Json::Value client::parse_cdb_all(const std::vector<read_info>& info, cdb_out_da
 
                     std::string value = commpression_zlib::decompress_string(it.content.substr(start, val_size));
                     start += val_size;
-                    
-                    if (value.empty()) continue;
 
                     if (data.isMember(key))
                     {
@@ -1457,84 +1512,11 @@ Json::Value client::parse_cdb_all(const std::vector<read_info>& info, cdb_out_da
     return data;
 }
 
-client::read_res client::command_partitional(std::unordered_map<std::string, std::string>& sub_readed,
-                                             const std::string &filename,
-                                             std::unordered_set<std::string> sub_elements,
-                                             std::int32_t timeout_mili_sec,
-                                             std::vector<std::int32_t> preffered_netwok_groups,
-                                             rw_preference rw_pref,
-                                             bool skip_aes)
-{
-    timer tm;
-
-    std::map<std::int32_t, std::vector<std::int32_t> > servers_pool_indexex;
-
-
-    for (int i = 0; i < clients.size(); ++i)
-    {
-        std::shared_ptr<tcp_client> c = clients[i];
-
-        if (c->get_socket_state() == tcp_client::socket_status::connected && !c->timeout.is_timeout_detected())
-        {
-            if ((rw_pref == rw_preference::any && c->can_use_in_any_rp()) ||
-                std::find(preffered_netwok_groups.begin(), preffered_netwok_groups.end(), c->get_network_group()) != preffered_netwok_groups.end())
-            {
-                servers_pool_indexex[c->get_network_group()].push_back(i);
-            }
-        }
-    }
-
-    std::unordered_set<std::int32_t> used_groups;
-    while (tm.elapsed_mili() < timeout_mili_sec)
-    {
-        std::int32_t ind = pop_index_rand(servers_pool_indexex, used_groups, -1);
-
-        if (ind == -1)
-        {
-            if (!sub_readed.empty()) return client::read_res::readed_particulary;
-            return client::read_res::file_not_found;
-        }
-
-        std::shared_ptr<tcp_client> c = clients[ind];
-        tcp_client::socket_status state = c->get_socket_state();
-        if (state == tcp_client::socket_status::connected)
-        {
-            std::string fl_search { filename + "?" + basefunc_std::get_string_from_set(sub_elements) };
-//std::cout << fl_search << " " << c->get_ip() << std::endl;
-            std::vector<read_info> indexex;
-            command(skip_aes ? read_info_type::read_streamed_unsecure : read_info_type::read_streamed, indexex, fl_search, 1, timeout_mili_sec, preffered_netwok_groups, rw_pref, { network_std::inet_aton(c->get_ip()) });
-            if (!indexex.empty())
-            {
-                streamer<> bs { std::move(indexex[0].content) };
-
-                while (bs.is_data_available())
-                {
-                    std::string name_of_element;
-                    bs >> name_of_element;
-
-                    streamer<> str;
-                    bs.fetch_streamer(str);
-
-                    sub_elements.erase(name_of_element);
-                    sub_readed.insert( { std::move(name_of_element), str.get() } );
-                }
-
-                if (sub_elements.empty())
-                {
-                    return client::read_res::ok;
-                }
-            }
-        }
-    }
-
-    return client::read_res::timeout;
-}
-
 client::read_res client::command_seq(read_info_type r_type, std::vector<read_info>& indexex, const std::string& filename, std::int32_t timeout_one_server, std::int32_t timeout_general, std::vector<std::int32_t> preffered_netwok_groups, rw_preference rw_pref, std::set<std::uint32_t> only_ips, bool to_all)
 {
     if (timeout_one_server < 300)
     {
-        helper::alert("Low command_seq timeout_one_server " + std::to_string(timeout_one_server), "command_seq", "rssdisk", 1);
+        NotificationHandler::notify("Low command_seq timeout_one_server " + std::to_string(timeout_one_server), "command_seq", "rssdisk", 1);
         timeout_one_server = 300;
     }
 
@@ -1603,36 +1585,28 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
     //bool debug { false };
     //if (filename == "{\"keys\":\"online_tcu_\"}" || filename == "{\"keys\":\"online_tcu_away_\"}") debug = true;
 
-    std::uint8_t cnt_t_servers { 0 };
-    std::uint8_t cnt_sent_servers { 0 };
-
     std::map<std::int32_t, std::uint64_t> callback_ids;
     for (int i = 0; i < clients.size(); ++i)
     {
         std::shared_ptr<tcp_client> c = clients[i];
-
-        bool need_send { false };
-        if (!only_ips.empty())
+        if (c->get_socket_state() == tcp_client::socket_status::connected && !c->timeout.is_timeout_detected())
         {
-            if (only_ips.count(network_std::inet_aton(c->get_ip())) != 0)
+            bool need_send { false };
+            if (!only_ips.empty())
+            {
+                if (only_ips.count(network_std::inet_aton(c->get_ip())) != 0)
+                {
+                    need_send = true;
+                }
+            }
+            else if ((rw_pref == rw_preference::any && c->can_use_in_any_rp()) ||
+                     std::find(preffered_netwok_groups.begin(), preffered_netwok_groups.end(), c->get_network_group()) != preffered_netwok_groups.end())
             {
                 need_send = true;
             }
-        }
-        else if ((rw_pref == rw_preference::any && c->can_use_in_any_rp()) ||
-                 std::find(preffered_netwok_groups.begin(), preffered_netwok_groups.end(), c->get_network_group()) != preffered_netwok_groups.end())
-        {
-            need_send = true;
-        }
 
-        if (need_send)
-        {
-            ++cnt_t_servers;
-
-            if (c->get_socket_state() == tcp_client::socket_status::connected && !c->timeout.is_timeout_detected())
+            if (need_send)
             {
-                ++cnt_sent_servers;
-
                 std::int32_t identy = c->get_identy();
                 std::string to_write;
 
@@ -1648,9 +1622,6 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
                     case read_info_type::read_cdb: to_write = "20"; break;
                     case read_info_type::read_cdb_tms_newest: to_write = "20"; break;
                     case read_info_type::read_cdb_all: to_write = "21"; break;
-                    case read_info_type::read_streamed: to_write = "27"; break;
-                    case read_info_type::read_streamed_unsecure: to_write = "28"; break;
-                    case read_info_type::read_sdb: to_write = "30"; break;
                     case read_info_type::read_edb_events: to_write = "31"; break;
                     default: to_write = "01"; break;
                 }
@@ -1697,10 +1668,7 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
                                     {
 
                                     }
-                                    else if (ri.file_type == w_type::jdb_data ||
-                                             ri.file_type == w_type::sdb_data ||
-                                             ri.file_type == w_type::sdb_idx ||
-                                             ri.file_type == w_type::sdb_fsp)
+                                    else if (ri.file_type == w_type::jdb_data)
                                     {
                                         if (f_info_string.size() >= 6)
                                         {
@@ -1748,7 +1716,7 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
                                     indexex.push_back(ri);
                                 }
                             }
-                            else if (r_type == read_info_type::read_files || r_type == read_info_type::read_file_tms_newest || r_type == read_info_type::read_cdb || r_type == read_info_type::read_cdb_tms_newest || r_type == read_info_type::read_streamed || r_type == read_info_type::read_streamed_unsecure || r_type == read_info_type::read_sdb)
+                            else if (r_type == read_info_type::read_files || r_type == read_info_type::read_file_tms_newest || r_type == read_info_type::read_cdb || r_type == read_info_type::read_cdb_tms_newest)
                             {
                                 if (status.compare("01") == 0 && message_.size() > 32)
                                 {
@@ -1764,7 +1732,7 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
 
                                         if (ri.content.size() >= 3 && ri.content.substr(0, 3).compare("jdb") == 0) is_jdb_full = true;
 
-                                        if (ri.file_type != w_type::insert_only_without_compress && ri.file_type != w_type::updatable_without_compress && ri.file_type != w_type::appendable && ri.file_type != w_type::sdb && !is_jdb_full) ri.content = commpression_zlib::decompress_string(ri.content);
+                                        if (ri.file_type != w_type::insert_only_without_compress && ri.file_type != w_type::updatable_without_compress && ri.file_type != w_type::appendable && !is_jdb_full) ri.content = commpression_zlib::decompress_string(ri.content);
                                     }
 
                                     std::lock_guard<std::mutex> _{ lock_indexex };
@@ -1821,7 +1789,7 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
                         {
                             basefunc_std::cout("Waiting for previous answer", "rssdisk_pool_client_command", basefunc_std::COLOR::RED_COL);
                             std::shared_ptr<tcp_client> c = clients[i];
-                            helper::alert("rssdisk_pool_client_command " + c->get_ip(), "rssdisk", "rssdisk", 1);
+                            NotificationHandler::notify("rssdisk_pool_client_command " + c->get_ip(), "rssdisk", "rssdisk", 1);
                         }
 
                         {
@@ -1834,16 +1802,6 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
                     }
                 });
 
-                if (r_type == read_info_type::read_streamed_unsecure)
-                {
-                    c->set_skip_aes(true);
-                }
-
-                /*if (debug)
-                {
-                    basefunc_std::log(filename + " send " + c->get_ip(), "debug_count_awainting_responses_4", false);
-                }*/
-
                 v_async_send_item.push_back(async_send);
                 ++count_awainting_responses;
                 c->send_async(async_send);
@@ -1855,13 +1813,8 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
 
     std::set<std::int32_t> _timeout_indexes;
 
-    std::int32_t count_parts_awaiting = (r_type == read_info_type::read_file_tms_newest || r_type == read_info_type::read_cdb_tms_newest || r_type == read_info_type::read_sdb || r_type == read_info_type::read_edb_events) ? std::numeric_limits<std::int32_t>::max() : count_parts;
+    std::int32_t count_parts_awaiting = (r_type == read_info_type::read_file_tms_newest || r_type == read_info_type::read_cdb_tms_newest || r_type == read_info_type::read_edb_events) ? std::numeric_limits<std::int32_t>::max() : count_parts;
     if (only_ips.empty() && r_type == read_info_type::read_files_many) count_parts_awaiting = std::numeric_limits<std::int32_t>::max();
-
-    if (count_parts_awaiting > cnt_sent_servers)
-    {
-        count_parts_awaiting = cnt_sent_servers;
-    }
 
     /*if (debug)
     {
@@ -1934,11 +1887,6 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
         std::shared_ptr<tcp_client> c = clients[it.first];
         c->unset_read_callback(it.second);
 
-        if (r_type == read_info_type::read_streamed_unsecure)
-        {
-            c->set_skip_aes(false);
-        }
-
         if (_timeout_indexes.count(it.first) == 0) c->timeout.reset_timeout();
     }
 
@@ -1975,11 +1923,6 @@ client::read_res client::command(read_info_type r_type, std::vector<read_info>& 
         indexex = std::move(rin);
     }
 
-    if (count_parts > cnt_sent_servers && cnt_t_servers > cnt_sent_servers && indexex.empty())
-    {
-        basefunc_std::log(filename + " requested count_parts: " + std::to_string(count_parts) + " cnt_t_servers: " + std::to_string(cnt_t_servers) + " cnt_sent_servers: " + std::to_string(cnt_sent_servers), "rssdisk/debug_rssdisk_cmd");
-    }
-
     return read_res::ok;
 }
 
@@ -2014,16 +1957,6 @@ std::string client::prepare_jdb(const Json::Value& data, const Json::Value& sett
 }
 
 std::string client::prepare_jdb(const std::string& data, const std::string& sett)
-{
-    return bitbase::numeric_to_chars(static_cast<std::uint32_t>(sett.size())) + sett + data;
-}
-
-std::string client::prepare_sdb(const std::string& data, const Json::Value& sett)
-{
-    return prepare_jdb(data, sett.toString());
-}
-
-std::string client::prepare_sdb(const std::string& data, const std::string& sett)
 {
     return bitbase::numeric_to_chars(static_cast<std::uint32_t>(sett.size())) + sett + data;
 }
