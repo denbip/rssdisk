@@ -1,6 +1,7 @@
 #include "hstf.h"
 
 std::atomic_bool hstf_client::is_running { ATOMIC_VAR_INIT(true) };
+std::string hstf_client::strp;
 
 bool hstf::init(const std::string& cfg, const std::string& ip)
 {
