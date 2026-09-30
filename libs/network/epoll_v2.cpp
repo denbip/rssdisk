@@ -665,7 +665,7 @@ bool epoll_v2::listen(const std::string& ip, int port, std::atomic_bool& is_runn
     return true;
 }
 
-int epoll_v2::write_to_fd(int epoll_fd, int fd)
+void epoll_v2::write_to_fd(int epoll_fd, int fd)
 {
     std::deque<m_write*>& msgs = awaiting_for_write[fd];
 

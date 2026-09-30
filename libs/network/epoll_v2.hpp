@@ -284,7 +284,7 @@ private:
     static std::vector<std::string> process_read2(message_helper& _m, const char *buf, ssize_t nbytes, const std::string& _det_string);
     void process_message(socket_client &c, std::string&& str);
 
-    int write_to_fd(int epoll_fd, int fd);
+    void write_to_fd(int epoll_fd, int fd);
 
     //single thread
     std::unordered_map<int, socket_client> authorized_clients;
